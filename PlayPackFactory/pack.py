@@ -2,6 +2,7 @@
 
 # Standard library imports
 import argparse
+import hashlib
 import os
 import random
 import shutil
@@ -1085,6 +1086,38 @@ def build_sample_map(subfolder_config: Dict[str, Dict[str, Any]]) -> Dict[str, L
         print(f"Collected {len(wav_files)} files for subfolder '{subfolder}'")
     return sample_map
 
+
+def adjust_filename(filename: str, max_length: int = 31) -> str:
+    """
+    Truncates the filename to ensure it does not exceed the specified maximum length.
+    Preserves the file extension.
+
+    Args:
+        filename (str): The original filename.
+        max_length (int): The maximum allowed length for the filename.
+
+    Returns:
+        str: The adjusted filename.
+    """
+    if len(filename) < max_length:
+        return filename
+
+    name_stem = Path(filename).stem
+    name_suffix = Path(filename).suffix
+    max_stem_length = max_length - len(name_suffix)
+    truncated_stem = name_stem[:max_stem_length]
+
+    # Generate a short hash based on the original filename
+    hash_suffix = hashlib.md5(name_stem.encode()).hexdigest()[:4]
+
+    # Append the hash to the truncated stem
+    truncated_stem_with_hash = truncated_stem[:max_stem_length - 5] + f"_{hash_suffix}"
+
+    # Reassemble the new filename
+    new_name = truncated_stem_with_hash + name_suffix
+
+    return new_name
+
 def create_sample_pack(pack_name: str, sample_map: Dict[str, List[Path]], output_dir: str) -> None:
     """
     Creates a sample pack by selecting random samples from each subfolder's list and processing them.
@@ -1175,7 +1208,14 @@ def create_sample_pack(pack_name: str, sample_map: Dict[str, List[Path]], output
         channels = SUBFOLDER_CONFIG[subfolder].get("channels", 2)
 
         for file_path in files:
-            dest_file_path = dest_subfolder / file_path.name
+            original_name = file_path.name
+            new_name = adjust_filename(original_name)
+
+            if new_name != original_name:
+                print(f"Filename '{original_name}' exceeds 31 characters. Truncating to '{new_name}'.")
+
+            dest_file_path = dest_subfolder / new_name
+
             try:
                 shutil.copy2(file_path, dest_file_path)
                 convert_audio(dest_file_path, channels)
