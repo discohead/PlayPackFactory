@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 
+# Standard library imports
 import argparse
 import os
-from pathlib import Path
 import random
 import shutil
+import re
+from pathlib import Path
 from typing import List, Dict, Any
+
+# Third-party library imports
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.silence import detect_silence
-import re
 from faker import Faker
 
-'''
+"""
 Refactored Python script to generalize the conversion of audio samples from Native Instruments Maschine Expansion packs into the folder structure expected by the Polyend Play for its sample packs.
 
 This script allows specifying arbitrary lists of directories for each subfolder of the resulting Polyend Play sample pack. It recursively collects all .wav files from the specified source directories for each subfolder, processes them to meet the Polyend Play's requirements, and populates the sample pack folders accordingly.
@@ -27,8 +30,9 @@ Features:
 - Exclude specified directories when collecting samples for certain subfolders.
 - Include only directories containing specified substrings when collecting samples for certain subfolders.
 - Automatically generate unique two-word names for new sample packs.
-'''
+"""
 
+# Directory configurations for different sample types
 KICK_DIRS = [
     "/Users/jaredmcfarland/Music/Samples/Riemann/Ethno Afro Deep House/OneShots (WAV)/ASHRAM Ethno Deep House Kicks",
     "/Users/jaredmcfarland/Music/Samples/Riemann/Techno Oneshots 2/Kickdrums",
@@ -685,11 +689,13 @@ MISC_DIRS = [
     "/Users/jaredmcfarland/Music/Samples/batches_dirt",
 ]
 
+# Aggregate directories for easier management
 ALL_DRUM_DIRS = PERC_DIRS + SNARE_DIRS + HIHAT_DIRS + CYMBAL_DIRS + TOM_DIRS
 ALL_NOTE_DIRS = SYNTH_DIRS + CHORD_DIRS + VOCAL_DIRS
 ALL_DIRS = ALL_DRUM_DIRS + ALL_NOTE_DIRS + MISC_DIRS
 
 
+# Regular expressions for note filtering
 C_NOTES_SYNTH = r"(^|[_\s])C[3-6](?=[_\s]?$)"
 C_NOTES_BASS = r"(^|[_\s])C[0-2](?=[_\s]?$)"
 C_NOTES_ALL = r"(^|[_\s])C-?[0-9](?=[_\s]?$)"
@@ -714,6 +720,7 @@ HQ_DIRS = [
 ]
 
 # Configuration mapping for each subfolder in the Polyend Play sample pack
+# This defines the source directories, channel configuration, and regex filters for each subfolder
 SUBFOLDER_CONFIG: Dict[str, Dict[str, Any]] = {
     "Kick": {
         "source_dirs": KICK_DIRS,
@@ -830,8 +837,10 @@ SUBFOLDER_CONFIG: Dict[str, Dict[str, Any]] = {
     # Add more subfolders as needed
 }
 
+# Directory where the sample packs will be created
 PLAY_PACKS_DIR = "/Users/jaredmcfarland/Music/Samples/Play_Factory"
 
+# Constraints for the sample packs
 MAX_FOLDERS_PER_PACK = 20
 MAX_FILES_PER_PACK = 255
 MAX_FILE_SIZE_KB = 400
@@ -842,11 +851,21 @@ NUM_NEW_PACKS = 5  # Change this number as needed
 # Toggle to determine whether to rebuild all packs or only new ones
 REBUILD_ALL = False
 
-# Initialize Faker
+# Initialize Faker for generating unique names
 fake = Faker()
 
 
 def generate_unique_two_word_names(n: int, existing_names: set = None) -> set:
+    """
+    Generates a set of unique two-word names for sample packs.
+
+    Args:
+        n (int): Number of unique names to generate.
+        existing_names (set, optional): A set of names to exclude from generation to ensure uniqueness.
+
+    Returns:
+        set: A set containing n unique two-word names.
+    """
     """
     Generates a set of unique two-word names.
 
@@ -882,6 +901,17 @@ def detect_silence_at_end(audio: AudioSegment, silence_thresh: float = -48.0, mi
     Returns:
         bool: True if the end of the audio contains silence, False otherwise.
     """
+    """
+    Detects if the audio ends with silence.
+
+    Args:
+        audio (AudioSegment): The audio segment to analyze.
+        silence_thresh (float): The silence threshold in dBFS (default: -48.0).
+        min_silence_len (int): The minimum length of silence in milliseconds (default: 250 ms).
+
+    Returns:
+        bool: True if the end of the audio contains silence, False otherwise.
+    """
     # Detect silent parts in the audio
     silent_ranges = detect_silence(audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
 
@@ -905,6 +935,17 @@ def trim_silence_from_end(audio: AudioSegment, silence_thresh: float = -48.0, mi
     Returns:
         AudioSegment: The audio file with silence trimmed from the end.
     """
+    """
+    Trims silence only from the end of an audio file, ensuring that non-silent sections are not removed.
+
+    Args:
+        audio (AudioSegment): The audio file to trim.
+        silence_thresh (float): The silence threshold in dBFS (default: -48.0).
+        min_silence_len (int): The minimum length of silence in milliseconds (default: 250 ms).
+
+    Returns:
+        AudioSegment: The audio file with silence trimmed from the end.
+    """
     if detect_silence_at_end(audio, silence_thresh, min_silence_len):
         silent_ranges = detect_silence(audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
         last_silence_start, _ = silent_ranges[-1]
@@ -912,6 +953,14 @@ def trim_silence_from_end(audio: AudioSegment, silence_thresh: float = -48.0, mi
     return audio
 
 def convert_audio(wav_file_path: Path, channels: int) -> None:
+    """
+    Converts the input .wav file to 44.1 kHz sample rate, 16-bit depth, and specified number of channels.
+    Trims silence from the end.
+
+    Args:
+        wav_file_path (Path): The path to the input .wav file.
+        channels (int): Number of audio channels (1 for mono, 2 for stereo).
+    """
     """
     Converts the input .wav file to 44.1 kHz sample rate, 16-bit depth, and specified number of channels.
     Trims silence from the end.
@@ -942,6 +991,21 @@ def convert_audio(wav_file_path: Path, channels: int) -> None:
 
 
 def collect_wav_files(source_dirs: List[str], regex: str = None, include_dirs: List[str] = None, exclude_dirs: List[str] = None) -> List[Path]:
+    """
+    Recursively collects all .wav files from the specified source directories.
+    If a regex is provided, only files matching the regex are included.
+    Optionally includes only directories containing specified substrings.
+    Optionally excludes directories containing specified substrings.
+
+    Args:
+        source_dirs (List[str]): List of source directories to search.
+        regex (str, optional): Regular expression to filter filenames.
+        include_dirs (List[str], optional): List of substrings; directories must contain at least one of these.
+        exclude_dirs (List[str], optional): List of substrings; directories containing any of these will be excluded.
+
+    Returns:
+        List[Path]: List of paths to .wav files.
+    """
     """
     Recursively collects all .wav files from the specified source directories.
     If a regex is provided, only files matching the regex are included.
@@ -1001,6 +1065,15 @@ def build_sample_map(subfolder_config: Dict[str, Dict[str, Any]]) -> Dict[str, L
     Returns:
         Dict[str, List[Path]]: Mapping from subfolder names to lists of .wav file paths.
     """
+    """
+    Builds a mapping from subfolder names to lists of .wav file paths based on the configuration.
+
+    Args:
+        subfolder_config (Dict[str, Dict[str, Any]]): Configuration for each subfolder.
+
+    Returns:
+        Dict[str, List[Path]]: Mapping from subfolder names to lists of .wav file paths.
+    """
     sample_map = {}
     for subfolder, config in subfolder_config.items():
         source_dirs = config.get("source_dirs", [])
@@ -1013,6 +1086,14 @@ def build_sample_map(subfolder_config: Dict[str, Dict[str, Any]]) -> Dict[str, L
     return sample_map
 
 def create_sample_pack(pack_name: str, sample_map: Dict[str, List[Path]], output_dir: str) -> None:
+    """
+    Creates a sample pack by selecting random samples from each subfolder's list and processing them.
+
+    Args:
+        pack_name (str): Name of the sample pack.
+        sample_map (Dict[str, List[Path]]): Mapping from subfolder names to lists of .wav file paths.
+        output_dir (str): Directory where the sample pack will be created.
+    """
     """
     Creates a sample pack by selecting random samples from each subfolder's list and processing them.
 
@@ -1120,6 +1201,14 @@ def delete_hidden_files(directory: str) -> None:
     Args:
         directory (str): The path to the directory from which hidden files should be deleted.
     """
+    """
+    Recursively deletes hidden files from the given directory and its subdirectories.
+
+    Hidden files are considered as files starting with a dot (e.g., .DS_Store).
+
+    Args:
+        directory (str): The path to the directory from which hidden files should be deleted.
+    """
     # Walk through directory and subdirectories
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -1133,6 +1222,9 @@ def delete_hidden_files(directory: str) -> None:
                     print(f"Failed to delete {file_path}: {e}")
 
 def main():
+    """
+    Main function to handle command-line arguments and initiate the sample pack creation process.
+    """
     # Setup command-line argument parsing
     parser = argparse.ArgumentParser(description="Generate Polyend Play sample packs from Native Instruments Maschine Expansion packs.")
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
